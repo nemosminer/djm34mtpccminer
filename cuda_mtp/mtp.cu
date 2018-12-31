@@ -26,6 +26,7 @@ void get_tree(int thr_id, uint8_t* d);
 static bool init[MAX_GPUS] = { 0 };
 static __thread uint32_t throughput = 0;
 static uint32_t JobId[MAX_GPUS] = {0};
+static uint64_t XtraNonce2[MAX_GPUS] = {0};
 static bool fillGpu[MAX_GPUS] = {false};
 static  MerkleTree::Elements TheElements;
 static  MerkleTree ordered_tree[MAX_GPUS];
@@ -38,7 +39,7 @@ static argon2_instance_t instance[MAX_GPUS];
 
 static std::vector<uint8_t*> MEM[MAX_GPUS];
 
-extern "C" int scanhash_mtp(int nthreads,int thr_id, struct work* work, uint32_t max_nonce, unsigned long *hashes_done, struct mtp* mtp)
+extern "C" int scanhash_mtp(int nthreads,int thr_id, struct work* work, uint32_t max_nonce, unsigned long *hashes_done, struct mtp* mtp, struct stratum_ctx *sctx)
 {
 
 	unsigned char mtpHashValue[32];
@@ -82,6 +83,7 @@ extern "C" int scanhash_mtp(int nthreads,int thr_id, struct work* work, uint32_t
 		mtp_cpu_init(thr_id, throughput);
 
 		init[thr_id] = true;
+
 
 	}
 
@@ -146,9 +148,9 @@ printf("memory filled \n");
 pthread_mutex_unlock(&work_lock);
 */
 
-if (JobId[thr_id] != work->data[17]) {
-
-	gpulog(LOG_WARNING, thr_id, "filling memory");
+if (JobId[thr_id] != work->data[17] || XtraNonce2[thr_id] != ((uint64_t*)work->xnonce2)[0]) {
+//	printf("thr_id %d xnonce2 %llx\n",thr_id, ((uint64_t*)work->xnonce2)[0]);
+//	gpulog(LOG_WARNING, thr_id, "filling memory");
 	//restart_threads();
 	//pthread_barrier_wait(&barrier);
 	if (JobId[thr_id] != 0)
@@ -157,11 +159,12 @@ if (JobId[thr_id] != work->data[17]) {
 	//printf("coming here2\n");
 	context[thr_id] = init_argon2d_param((const char*)endiandata);
 	argon2_ctx_from_mtp(&context[thr_id], &instance[thr_id]);
-
+//sleep(50);
 	for (int i = 0; i<MEM[thr_id].size(); i++)
 		free(MEM[thr_id][i]);
 	//printf("filling memory\n");
 	//gpulog(LOG_WARNING, thr_id, "filled first blocks on cpu\n");
+/*
 	mtp_fill_1b(thr_id, instance[thr_id].memory[0 + 0].v, 0 + 0);
 	mtp_fill_1b(thr_id, instance[thr_id].memory[0 + 1].v, 0 + 1);
 
@@ -171,6 +174,7 @@ if (JobId[thr_id] != work->data[17]) {
 	mtp_fill_1b(thr_id, instance[thr_id].memory[4 + 1].v, 2097152 + 1);
 	mtp_fill_1b(thr_id, instance[thr_id].memory[6 + 0].v, 3145728 + 0);
 	mtp_fill_1b(thr_id, instance[thr_id].memory[6 + 1].v, 3145728 + 1);
+*/
 //	uint8_t *x = (uint8_t*)malloc(MERKLE_TREE_ELEMENT_SIZE_B*instance->memory_blocks);
 	mtp_i_cpu(thr_id, instance[thr_id].block_header);
 //	printf("after argon3\n");
@@ -188,7 +192,7 @@ if (JobId[thr_id] != work->data[17]) {
 
 	//for(;;);
 	JobId[thr_id] = work->data[17];
-
+	XtraNonce2[thr_id] = ((uint64_t*)work->xnonce2)[0];
 	MerkleTree::Buffer root = ordered_tree[thr_id].getRoot();
 	//for(;;);
 	std::copy(root.begin(), root.end(), TheMerkleRoot[thr_id]);
@@ -196,8 +200,8 @@ if (JobId[thr_id] != work->data[17]) {
 //	printf("after argon4\n");
 	//	mtp_setBlockTarget(0,endiandata,ptarget,&TheMerkleRoot);
 	mtp_setBlockTarget(thr_id, endiandata, ptarget, &TheMerkleRoot[thr_id]);
-
-	gpulog(LOG_WARNING, thr_id, "memory filled %d chunks", MEM[thr_id].size());
+//	free(x);
+//	gpulog(LOG_WARNING, thr_id, "memory filled %d chunks", MEM[thr_id].size());
 }
 
 
@@ -284,15 +288,15 @@ fillGpu[thr_id]=false;
 */
 		pdata[19] += throughput;
 		if (pdata[19] >= real_maxnonce) {
-			gpulog(LOG_WARNING, thr_id, "OUT OF NONCE %x >= %x", pdata[19], real_maxnonce);
-			abort();
+			gpulog(LOG_WARNING, thr_id, "OUT OF NONCE %x >= %x incrementing extra nonce at next chance", pdata[19], real_maxnonce);
+			sctx->job.IncXtra = true;
 		}
 //	}   while (!work_restart[thr_id].restart && pdata[19]<real_maxnonce && JobId==work->data[17] /*&& pdata[19]<(first_nonce+128*throughput)*/);
 
 TheEnd:
-
-	*hashes_done = pdata[19] - first_nonce;
-
+//		sctx->job.IncXtra = true;
+		*hashes_done = pdata[19] - first_nonce;
+	
 
 	return 0;
 }
