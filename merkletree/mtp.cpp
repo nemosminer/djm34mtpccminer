@@ -19,7 +19,8 @@
 static const unsigned int d_mtp = 1;
 static const uint8_t L = 64;
 static const unsigned int memory_cost = memcost;
-extern uint8_t* get_tree(int thr_id,uint8_t *d);
+extern void get_tree(int thr_id,uint8_t *d);
+extern uint8_t* get_tree2(int thr_id);
 extern void get_block(int thr_id, void* d, uint32_t index);
 
 uint32_t index_beta(const argon2_instance_t *instance,
@@ -396,8 +397,9 @@ void clear_internal_memory(void *v, size_t n) {
 
 void free_memory(const argon2_context *context, uint8_t *memory,
 	size_t num, size_t size) {
-	size_t memory_size = num*size;
-//	clear_internal_memory(memory, memory_size);
+//	size_t memory_size = num*size;
+	size_t memory_size = 128 * 8 * 2 * 4 * 2;
+	clear_internal_memory(memory, memory_size);
 	if (context->free_cbk) {
 		(context->free_cbk)(memory, memory_size);
 	}
@@ -668,10 +670,6 @@ int mtp_solver(int thr_id, uint32_t TheNonce, argon2_instance_t *instance,
 		ablake2b_state BlakeHash;
 		ablake2b_init(&BlakeHash, 32);
 
-		uint32_t Test[4];
-
-		for (int i = 0; i<4; i++)
-			Test[i] = ((uint32_t*)resultMerkleRoot)[i];
 
 
 
@@ -722,6 +720,8 @@ int mtp_solver(int thr_id, uint32_t TheNonce, argon2_instance_t *instance,
 			ablake2b_final(&BlakeHash2, (unsigned char*)&Y[j], 32);
 			////////////////////////////////////////////////////////////////
 			// current block
+			clear_internal_memory(blockhash.v, ARGON2_BLOCK_SIZE);
+			clear_internal_memory(blockhash_bytes, ARGON2_BLOCK_SIZE);
 
 			unsigned char curr[32] = { 0 };
 			block blockhash_curr;
@@ -912,13 +912,15 @@ MerkleTree::Elements   mtp_init2(argon2_instance_t *instance) {
 
 }
 
-uint8_t *mtp_init3(argon2_instance_t *instance, int thr_id) {
-	printf("Step 1 : Compute F(I) and store its T blocks X[1], X[2], ..., X[T] in the memory \n");
-	uint8_t *mem = (uint8_t*)malloc(MERKLE_TREE_ELEMENT_SIZE_B*instance->memory_blocks);
-//	mem = get_tree(thr_id);
-	printf("Step 2 : Compute the root Φ of the Merkle hash tree \n");
+void  mtp_init3(argon2_instance_t *instance, int thr_id, MerkleTree &ThatTree) {
 
-	return mem;
+	printf("Step 1 : Compute F(I) and store its T blocks X[1], X[2], ..., X[T] in the memory \n");
+//	uint8_t *mem = (uint8_t*)malloc(MERKLE_TREE_ELEMENT_SIZE_B*instance->memory_blocks);
+//	get_tree(thr_id);
+	printf("Step 2 : Compute the root Φ of the Merkle hash tree \n");
+	ThatTree = MerkleTree(get_tree2(thr_id),true);
+//	ThatTree = TheTree;
+//	free(mem);
 }
 
 //
